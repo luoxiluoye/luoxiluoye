@@ -1,0 +1,1029 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>长图自由裁切 + 自动分段裁切（纯前端）</title>
+  <style>
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    body { margin: 0; background: #0b0c10; color: #e8e8ea; }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 18px; }
+    .card { background: #14161f; border: 1px solid #24283a; border-radius: 16px; padding: 16px; box-shadow: 0 8px 30px rgba(0,0,0,.35); }
+    h1 { font-size: 18px; margin: 0 0 10px; }
+    .sub { color: #a7adbd; font-size: 13px; line-height: 1.6; margin-bottom: 14px; }
+    .row { display: grid; grid-template-columns: 1.35fr 1fr; gap: 14px; }
+    @media (max-width: 980px){ .row{ grid-template-columns: 1fr; } }
+    .drop {
+      border: 1.5px dashed #3a3f5a;
+      border-radius: 14px;
+      padding: 14px;
+      background: linear-gradient(180deg, rgba(36,40,58,.25), rgba(20,22,31,.2));
+      cursor: pointer;
+      min-height: 82px;
+      display: flex; align-items: center; justify-content: center;
+      text-align: center;
+    }
+    .drop:hover { border-color: #5b63ff; }
+    .meta { margin-top: 10px; font-size: 12px; color: #a7adbd; }
+    .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .controls .full { grid-column: 1 / -1; }
+    label { font-size: 12px; color: #a7adbd; display: block; margin-bottom: 6px; }
+    input, select, button {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid #2a2f45;
+      background: #0f1220;
+      color: #e8e8ea;
+      outline: none;
+    }
+    input:focus, select:focus { border-color: #5b63ff; }
+    button { background: #5b63ff; border-color: #5b63ff; font-weight: 650; cursor: pointer; }
+    button.secondary { background: transparent; border-color: #2a2f45; font-weight: 600; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .note { font-size: 12px; color: #a7adbd; margin-top: 10px; line-height: 1.65; }
+    .progress { margin-top: 10px; font-size: 13px; color: #cfd3df; white-space: pre-line; }
+    .canvasWrap {
+      margin-top: 12px;
+      border-radius: 14px;
+      border: 1px solid #24283a;
+      background: #0b0c10;
+      position: relative;
+      overflow: hidden;
+      height: 520px;
+    }
+    canvas { width: 100%; height: 100%; display: block; }
+    .hintBar{
+      position:absolute; left:10px; bottom:10px;
+      background: rgba(15,18,32,.72);
+      border: 1px solid rgba(42,47,69,.9);
+      border-radius: 12px;
+      padding: 8px 10px;
+      font-size: 12px;
+      color:#cfd3df;
+      pointer-events:none;
+      backdrop-filter: blur(6px);
+      max-width: calc(100% - 20px);
+      line-height: 1.5;
+    }
+    .grid {
+      margin-top: 14px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 12px;
+    }
+    .item {
+      border: 1px solid #24283a;
+      border-radius: 14px;
+      overflow: hidden;
+      background: #0f1220;
+    }
+    .thumb { width: 100%; height: 220px; object-fit: cover; display: block; background: #0b0c10; }
+    .item .bar { padding: 10px; display: grid; gap: 8px; }
+    .item a {
+      display: inline-block;
+      text-decoration: none;
+      color: #e8e8ea;
+      font-size: 13px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid #2a2f45;
+      background: rgba(91,99,255,.12);
+      text-align: center;
+    }
+    .pill{
+      display:inline-block;
+      border:1px solid #2a2f45;
+      background: rgba(255,255,255,.05);
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      color:#cfd3df;
+      margin-right:6px;
+    }
+    .twoCol{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>长图自由裁切（横向/任意区域） + 自动分段裁切（纯前端）</h1>
+      <div class="sub">
+        ✅ 不用安装：双击打开本 HTML 就能用；<br/>
+        ✅ 图片只在浏览器本地处理，不上传服务器；<br/>
+        ✅ 先“自由裁切/去白边”，再“一键按高度或按份数分段裁切”。<br/>
+        <span class="pill">鼠标滚轮缩放</span><span class="pill">拖拽空白区域平移</span><span class="pill">Shift+拖拽新建裁切框</span>
+      </div>
+
+      <div class="row">
+        <div>
+          <input id="file" type="file" accept="image/*" hidden />
+          <div class="drop" id="drop">
+            <div>
+              <div style="font-weight:700; margin-bottom:6px;">点击选择图片 / 拖拽图片到这里</div>
+              <div style="font-size:12px; color:#a7adbd;">支持 PNG / JPG / WebP 等</div>
+            </div>
+          </div>
+          <div class="meta" id="meta">未选择图片</div>
+
+          <div class="canvasWrap">
+            <canvas id="view"></canvas>
+            <div class="hintBar" id="hint">
+              提示：<br/>
+              1) 拖拽裁切框的边/角可以调整大小；拖拽框内部可移动；<br/>
+              2) 直接拖拽空白处 = 平移；滚轮 = 缩放；<br/>
+              3) 想重新画一个框：按住 Shift 再拖拽。
+            </div>
+          </div>
+
+          <div class="progress" id="progress"></div>
+        </div>
+
+        <div>
+          <div class="controls">
+            <div class="full">
+              <label>视图</label>
+              <div class="twoCol">
+                <button class="secondary" id="btnFit">适配屏幕</button>
+                <button class="secondary" id="btnFitWidth">适配宽度</button>
+              </div>
+            </div>
+
+            <div class="full">
+              <label>缩放（%）</label>
+              <input id="zoom" type="range" min="10" max="400" value="100" />
+            </div>
+
+            <div class="full">
+              <label>裁切框（像素，基于原图）</label>
+              <div class="twoCol">
+                <input id="x" type="number" min="0" step="1" placeholder="x" />
+                <input id="y" type="number" min="0" step="1" placeholder="y" />
+              </div>
+              <div class="twoCol" style="margin-top:10px;">
+                <input id="w" type="number" min="1" step="1" placeholder="width" />
+                <input id="h" type="number" min="1" step="1" placeholder="height" />
+              </div>
+            </div>
+
+            <div class="full">
+              <div class="twoCol">
+                <button id="btnApplyCrop" disabled>应用裁切（替换为裁切后图片）</button>
+                <button class="secondary" id="btnReset" disabled>重置回原图</button>
+              </div>
+            </div>
+
+            <div class="full">
+              <label>自动去白边（可选）</label>
+              <div class="twoCol">
+                <input id="tol" type="number" min="0" max="80" step="1" value="18" />
+                <button class="secondary" id="btnAutoTrim" disabled>自动去白边并生成裁切框</button>
+              </div>
+              <div class="note">容差建议：纯白边 10~25；背景不是白色可适当加大。</div>
+            </div>
+
+            <div class="full" style="height:1px;background:#24283a;margin:6px 0;"></div>
+
+            <div class="full">
+              <label>分段裁切方式</label>
+              <select id="mode">
+                <option value="height">按每段高度（px）</option>
+                <option value="parts">按份数（平均切成 N 段）</option>
+              </select>
+            </div>
+
+            <div id="heightBox">
+              <label>每段高度（px）</label>
+              <input id="sliceHeight" type="number" min="100" step="10" value="2000" />
+            </div>
+
+            <div id="partsBox" style="display:none;">
+              <label>份数（N）</label>
+              <input id="parts" type="number" min="1" step="1" value="5" />
+            </div>
+
+            <div>
+              <label>重叠（px）</label>
+              <input id="overlap" type="number" min="0" step="1" value="80" />
+            </div>
+
+            <div>
+              <label>输出格式</label>
+              <select id="format">
+                <option value="image/png">PNG（无损）</option>
+                <option value="image/jpeg">JPG（可调质量）</option>
+              </select>
+            </div>
+
+            <div id="jpgQBox" style="display:none;">
+              <label>JPG 质量（1-100）</label>
+              <input id="jpgQuality" type="number" min="1" max="100" step="1" value="95" />
+            </div>
+
+            <div class="full">
+              <div class="twoCol">
+                <button id="btnSlice" disabled>开始分段裁切</button>
+                <button class="secondary" id="btnZip" disabled>打包下载 ZIP</button>
+              </div>
+            </div>
+
+            <div class="full">
+              <button id="btnClear" class="secondary" disabled>清空结果</button>
+            </div>
+
+            <div class="note">
+              建议：文字长图重叠 <b>60~120px</b> 防止断行；默认 PNG 无损不糊。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid" id="grid"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    const fileInput = $("file");
+    const drop = $("drop");
+    const meta = $("meta");
+    const progress = $("progress");
+
+    const canvas = $("view");
+    const ctx = canvas.getContext("2d");
+    const hint = $("hint");
+
+    const btnFit = $("btnFit");
+    const btnFitWidth = $("btnFitWidth");
+    const zoomSlider = $("zoom");
+
+    const inX = $("x"), inY = $("y"), inW = $("w"), inH = $("h");
+    const btnApplyCrop = $("btnApplyCrop");
+    const btnReset = $("btnReset");
+    const btnAutoTrim = $("btnAutoTrim");
+    const tolInput = $("tol");
+
+    const mode = $("mode");
+    const heightBox = $("heightBox");
+    const partsBox = $("partsBox");
+    const sliceHeight = $("sliceHeight");
+    const parts = $("parts");
+    const overlap = $("overlap");
+    const format = $("format");
+    const jpgQBox = $("jpgQBox");
+    const jpgQuality = $("jpgQuality");
+    const btnSlice = $("btnSlice");
+    const btnZip = $("btnZip");
+    const btnClear = $("btnClear");
+    const grid = $("grid");
+
+    let currentFile = null;
+    let originalBitmap = null;
+    let workingBitmap = null;
+
+    let scale = 1;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    let crop = null; // {x,y,w,h}
+    const MIN_SIZE = 2;
+
+    let action = null; // 'pan' | 'move' | 'new' | 'resize'
+    let handle = null;
+    let start = null;
+
+    let outputs = []; // {name, blob, url, w, h, idx}
+
+    function setProgress(t){ progress.textContent = t || ""; }
+    function human(n){
+      if (n < 1024) return n + " B";
+      if (n < 1024*1024) return (n/1024).toFixed(1) + " KB";
+      return (n/(1024*1024)).toFixed(2) + " MB";
+    }
+    function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+    function round(n){ return Math.round(n); }
+
+    function updateModeUI(){
+      const m = mode.value;
+      heightBox.style.display = (m === "height") ? "" : "none";
+      partsBox.style.display = (m === "parts") ? "" : "none";
+    }
+    function updateFormatUI(){
+      jpgQBox.style.display = (format.value === "image/jpeg") ? "" : "none";
+    }
+    mode.addEventListener("change", updateModeUI);
+    format.addEventListener("change", updateFormatUI);
+
+    function resizeCanvasToContainer(){
+      const rect = canvas.parentElement.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(rect.width * dpr);
+      canvas.height = Math.floor(rect.height * dpr);
+      ctx.setTransform(dpr,0,0,dpr,0,0); // draw in CSS pixels
+      draw();
+    }
+    window.addEventListener("resize", resizeCanvasToContainer);
+
+    drop.addEventListener("click", () => fileInput.click());
+    drop.addEventListener("dragover", (e)=>{ e.preventDefault(); drop.style.borderColor="#5b63ff"; });
+    drop.addEventListener("dragleave", ()=>{ drop.style.borderColor="#3a3f5a"; });
+    drop.addEventListener("drop", async (e)=>{
+      e.preventDefault();
+      drop.style.borderColor="#3a3f5a";
+      const f = e.dataTransfer.files?.[0];
+      if (f) await loadFile(f);
+    });
+    fileInput.addEventListener("change", async ()=>{
+      const f = fileInput.files?.[0];
+      if (f) await loadFile(f);
+    });
+
+    async function loadFile(f){
+      clearResults();
+      currentFile = f;
+      setProgress("正在读取图片…");
+      meta.textContent = `文件：${f.name}（${human(f.size)}）`;
+
+      try{
+        originalBitmap = await createImageBitmap(f, { imageOrientation: "from-image" });
+      }catch(e){
+        const url = URL.createObjectURL(f);
+        originalBitmap = await new Promise((resolve, reject)=>{
+          const img = new Image();
+          img.onload = async ()=>{
+            try{
+              const c = document.createElement("canvas");
+              c.width = img.naturalWidth; c.height = img.naturalHeight;
+              c.getContext("2d").drawImage(img,0,0);
+              c.toBlob(async (b)=>{
+                const bm = await createImageBitmap(b);
+                resolve(bm);
+              }, "image/png");
+            }catch(err){ reject(err); }
+            URL.revokeObjectURL(url);
+          };
+          img.onerror = reject;
+          img.src = url;
+        });
+      }
+
+      workingBitmap = originalBitmap;
+      crop = {x:0, y:0, w:workingBitmap.width, h:workingBitmap.height};
+      syncCropInputs();
+
+      meta.textContent = `文件：${f.name}（${human(f.size)}）｜原图：${originalBitmap.width}×${originalBitmap.height}｜当前：${workingBitmap.width}×${workingBitmap.height}`;
+      enableUI(true);
+
+      resizeCanvasToContainer();
+      fitToView();
+      setProgress("就绪：先横向/任意区域自由裁切（或自动去白边），点击“应用裁切”，再分段裁切。");
+      hint.style.display = "";
+    }
+
+    function enableUI(on){
+      btnApplyCrop.disabled = !on;
+      btnReset.disabled = !on;
+      btnAutoTrim.disabled = !on;
+      btnSlice.disabled = !on;
+      btnClear.disabled = !on;
+      btnZip.disabled = true;
+    }
+
+    function clearResults(){
+      outputs.forEach(o => URL.revokeObjectURL(o.url));
+      outputs = [];
+      grid.innerHTML = "";
+      btnZip.disabled = true;
+    }
+
+    btnClear.addEventListener("click", ()=>{
+      clearResults();
+      setProgress("已清空分段结果。");
+    });
+
+    function fitToView(){
+      if (!workingBitmap) return;
+      const W = canvas.clientWidth;
+      const H = canvas.clientHeight;
+      const s = Math.min(W / workingBitmap.width, H / workingBitmap.height);
+      scale = s;
+      offsetX = (W - workingBitmap.width * s) / 2;
+      offsetY = (H - workingBitmap.height * s) / 2;
+      zoomSlider.value = String(clamp(Math.round(scale*100), 10, 400));
+      draw();
+    }
+    function fitToWidth(){
+      if (!workingBitmap) return;
+      const W = canvas.clientWidth;
+      const H = canvas.clientHeight;
+      const s = W / workingBitmap.width;
+      scale = s;
+      offsetX = 0;
+      offsetY = (H - workingBitmap.height * s) / 2;
+      zoomSlider.value = String(clamp(Math.round(scale*100), 10, 400));
+      draw();
+    }
+
+    btnFit.addEventListener("click", fitToView);
+    btnFitWidth.addEventListener("click", fitToWidth);
+    zoomSlider.addEventListener("input", ()=>{
+      const z = Number(zoomSlider.value) / 100;
+      const cx = canvas.clientWidth / 2;
+      const cy = canvas.clientHeight / 2;
+      const imgPt = screenToImage(cx, cy);
+      scale = z;
+      const newScreen = imageToScreen(imgPt.x, imgPt.y);
+      offsetX += (cx - newScreen.x);
+      offsetY += (cy - newScreen.y);
+      draw();
+    });
+
+    function imageToScreen(ix, iy){
+      return { x: ix * scale + offsetX, y: iy * scale + offsetY };
+    }
+    function screenToImage(sx, sy){
+      return { x: (sx - offsetX) / scale, y: (sy - offsetY) / scale };
+    }
+
+    function draw(){
+      const W = canvas.clientWidth;
+      const H = canvas.clientHeight;
+      ctx.clearRect(0,0,W,H);
+
+      if (!workingBitmap){
+        ctx.fillStyle = "rgba(255,255,255,.06)";
+        ctx.fillRect(0,0,W,H);
+        return;
+      }
+
+      ctx.save();
+      ctx.translate(offsetX, offsetY);
+      ctx.scale(scale, scale);
+      ctx.drawImage(workingBitmap, 0, 0);
+      ctx.restore();
+
+      if (crop) drawCropOverlay();
+    }
+
+    function drawCropOverlay(){
+      const W = canvas.clientWidth;
+      const H = canvas.clientHeight;
+
+      const x1 = crop.x, y1 = crop.y, x2 = crop.x + crop.w, y2 = crop.y + crop.h;
+      const p1 = imageToScreen(x1, y1);
+      const p2 = imageToScreen(x2, y2);
+
+      ctx.save();
+      ctx.fillStyle = "rgba(0,0,0,.45)";
+      ctx.beginPath();
+      ctx.rect(0,0,W,H);
+      ctx.rect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y);
+      ctx.fill("evenodd");
+
+      ctx.strokeStyle = "rgba(91,99,255, .95)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y);
+
+      ctx.strokeStyle = "rgba(255,255,255,.25)";
+      ctx.lineWidth = 1;
+      const w = p2.x - p1.x, h = p2.y - p1.y;
+      ctx.beginPath();
+      ctx.moveTo(p1.x + w/3, p1.y); ctx.lineTo(p1.x + w/3, p2.y);
+      ctx.moveTo(p1.x + 2*w/3, p1.y); ctx.lineTo(p1.x + 2*w/3, p2.y);
+      ctx.moveTo(p1.x, p1.y + h/3); ctx.lineTo(p2.x, p1.y + h/3);
+      ctx.moveTo(p1.x, p1.y + 2*h/3); ctx.lineTo(p2.x, p1.y + 2*h/3);
+      ctx.stroke();
+
+      const hs = 8;
+      const handles = getHandlePoints();
+      ctx.fillStyle = "rgba(255,255,255,.9)";
+      ctx.strokeStyle = "rgba(15,18,32,1)";
+      ctx.lineWidth = 2;
+      for (const k in handles){
+        const pt = handles[k];
+        const spt = imageToScreen(pt.x, pt.y);
+        ctx.beginPath();
+        ctx.rect(spt.x - hs, spt.y - hs, hs*2, hs*2);
+        ctx.fill();
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = "rgba(15,18,32,.85)";
+      ctx.strokeStyle = "rgba(42,47,69,.95)";
+      ctx.lineWidth = 1;
+      const tag = `x:${round(crop.x)} y:${round(crop.y)} w:${round(crop.w)} h:${round(crop.h)}`;
+      ctx.font = "12px system-ui, sans-serif";
+      const tw = ctx.measureText(tag).width + 14;
+      const tx = clamp(p1.x, 6, W - tw - 6);
+      const ty = clamp(p1.y - 28, 6, H - 22);
+      ctx.beginPath();
+      ctx.roundRect(tx, ty, tw, 20, 10);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "rgba(232,232,234,.95)";
+      ctx.fillText(tag, tx + 7, ty + 14);
+
+      ctx.restore();
+    }
+
+    if (!CanvasRenderingContext2D.prototype.roundRect) {
+      CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+        if (typeof r === "number") r = {tl:r,tr:r,br:r,bl:r};
+        this.beginPath();
+        this.moveTo(x+r.tl, y);
+        this.lineTo(x+w-r.tr, y);
+        this.quadraticCurveTo(x+w, y, x+w, y+r.tr);
+        this.lineTo(x+w, y+h-r.br);
+        this.quadraticCurveTo(x+w, y+h, x+w-r.br, y+h);
+        this.lineTo(x+r.bl, y+h);
+        this.quadraticCurveTo(x, y+h, x, y+h-r.bl);
+        this.lineTo(x, y+r.tl);
+        this.quadraticCurveTo(x, y, x+r.tl, y);
+        this.closePath();
+        return this;
+      };
+    }
+
+    function getHandlePoints(){
+      const x1 = crop.x, y1 = crop.y, x2 = crop.x + crop.w, y2 = crop.y + crop.h;
+      const xm = (x1 + x2) / 2;
+      const ym = (y1 + y2) / 2;
+      return {
+        nw: {x:x1, y:y1},
+        n:  {x:xm, y:y1},
+        ne: {x:x2, y:y1},
+        e:  {x:x2, y:ym},
+        se: {x:x2, y:y2},
+        s:  {x:xm, y:y2},
+        sw: {x:x1, y:y2},
+        w:  {x:x1, y:ym},
+      };
+    }
+
+    function hitTestHandle(sx, sy){
+      if (!crop) return null;
+      const hs = 12;
+      const handles = getHandlePoints();
+      for (const k in handles){
+        const pt = imageToScreen(handles[k].x, handles[k].y);
+        if (Math.abs(sx - pt.x) <= hs && Math.abs(sy - pt.y) <= hs) return k;
+      }
+      return null;
+    }
+
+    function isInsideCrop(sx, sy){
+      if (!crop) return false;
+      const p1 = imageToScreen(crop.x, crop.y);
+      const p2 = imageToScreen(crop.x + crop.w, crop.y + crop.h);
+      return sx >= p1.x && sx <= p2.x && sy >= p1.y && sy <= p2.y;
+    }
+
+    function normalizeCrop(){
+      if (!crop) return;
+      if (crop.w < 0){ crop.x += crop.w; crop.w = -crop.w; }
+      if (crop.h < 0){ crop.y += crop.h; crop.h = -crop.h; }
+      crop.w = Math.max(MIN_SIZE, crop.w);
+      crop.h = Math.max(MIN_SIZE, crop.h);
+
+      const maxW = workingBitmap.width;
+      const maxH = workingBitmap.height;
+      crop.x = clamp(crop.x, 0, maxW - MIN_SIZE);
+      crop.y = clamp(crop.y, 0, maxH - MIN_SIZE);
+      crop.w = clamp(crop.w, MIN_SIZE, maxW - crop.x);
+      crop.h = clamp(crop.h, MIN_SIZE, maxH - crop.y);
+    }
+
+    function syncCropInputs(){
+      if (!crop) return;
+      inX.value = String(round(crop.x));
+      inY.value = String(round(crop.y));
+      inW.value = String(round(crop.w));
+      inH.value = String(round(crop.h));
+    }
+
+    function setCropFromInputs(){
+      if (!workingBitmap) return;
+      crop = {
+        x: Number(inX.value || 0),
+        y: Number(inY.value || 0),
+        w: Number(inW.value || 1),
+        h: Number(inH.value || 1),
+      };
+      normalizeCrop();
+      draw();
+    }
+    [inX,inY,inW,inH].forEach(el=>{
+      el.addEventListener("change", setCropFromInputs);
+      el.addEventListener("blur", setCropFromInputs);
+    });
+
+    canvas.addEventListener("pointerdown", (e)=>{
+      if (!workingBitmap) return;
+      canvas.setPointerCapture(e.pointerId);
+      const rect = canvas.getBoundingClientRect();
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
+
+      if (!crop || e.shiftKey){
+        const ip = screenToImage(sx, sy);
+        crop = {x: ip.x, y: ip.y, w: 1, h: 1};
+        action = "new";
+        start = {sx, sy, ix: ip.x, iy: ip.y};
+        syncCropInputs();
+        draw();
+        return;
+      }
+
+      const ht = hitTestHandle(sx, sy);
+      if (ht){
+        action = "resize";
+        handle = ht;
+        const ip = screenToImage(sx, sy);
+        start = {sx, sy, ix: ip.x, iy: ip.y, crop: {...crop}};
+        return;
+      }
+
+      if (isInsideCrop(sx, sy)){
+        action = "move";
+        const ip = screenToImage(sx, sy);
+        start = {sx, sy, ix: ip.x, iy: ip.y, crop: {...crop}};
+        return;
+      }
+
+      action = "pan";
+      start = {sx, sy, offsetX, offsetY};
+    });
+
+    canvas.addEventListener("pointermove", (e)=>{
+      if (!workingBitmap || !action) return;
+      const rect = canvas.getBoundingClientRect();
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
+
+      if (action === "pan"){
+        offsetX = start.offsetX + (sx - start.sx);
+        offsetY = start.offsetY + (sy - start.sy);
+        draw();
+        return;
+      }
+
+      const ip = screenToImage(sx, sy);
+
+      if (action === "new"){
+        crop.w = ip.x - start.ix;
+        crop.h = ip.y - start.iy;
+        normalizeCrop();
+        syncCropInputs();
+        draw();
+        return;
+      }
+
+      if (action === "move"){
+        const dx = ip.x - start.ix;
+        const dy = ip.y - start.iy;
+        crop.x = start.crop.x + dx;
+        crop.y = start.crop.y + dy;
+        normalizeCrop();
+        syncCropInputs();
+        draw();
+        return;
+      }
+
+      if (action === "resize"){
+        const c0 = start.crop;
+        let x1 = c0.x, y1 = c0.y, x2 = c0.x + c0.w, y2 = c0.y + c0.h;
+        const hx = ip.x, hy = ip.y;
+        switch(handle){
+          case "nw": x1 = hx; y1 = hy; break;
+          case "n":  y1 = hy; break;
+          case "ne": x2 = hx; y1 = hy; break;
+          case "e":  x2 = hx; break;
+          case "se": x2 = hx; y2 = hy; break;
+          case "s":  y2 = hy; break;
+          case "sw": x1 = hx; y2 = hy; break;
+          case "w":  x1 = hx; break;
+        }
+        crop.x = x1; crop.y = y1; crop.w = x2 - x1; crop.h = y2 - y1;
+        normalizeCrop();
+        syncCropInputs();
+        draw();
+        return;
+      }
+    });
+
+    canvas.addEventListener("pointerup", ()=>{
+      action = null; handle = null; start = null;
+    });
+
+    canvas.addEventListener("wheel", (e)=>{
+      if (!workingBitmap) return;
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
+
+      const factor = Math.exp((-e.deltaY) * 0.0015);
+      const newScale = clamp(scale * factor, 0.1, 4.0);
+
+      const ip = screenToImage(sx, sy);
+      scale = newScale;
+      const sp = imageToScreen(ip.x, ip.y);
+      offsetX += (sx - sp.x);
+      offsetY += (sy - sp.y);
+
+      zoomSlider.value = String(clamp(Math.round(scale*100), 10, 400));
+      draw();
+    }, {passive:false});
+
+    btnApplyCrop.addEventListener("click", async ()=>{
+      if (!workingBitmap || !crop) return;
+      normalizeCrop();
+      syncCropInputs();
+
+      setProgress("正在应用裁切（生成新图片）…");
+      clearResults();
+      btnZip.disabled = true;
+
+      const outCanvas = document.createElement("canvas");
+      outCanvas.width = Math.round(crop.w);
+      outCanvas.height = Math.round(crop.h);
+      const octx = outCanvas.getContext("2d");
+      octx.drawImage(
+        workingBitmap,
+        Math.round(crop.x), Math.round(crop.y), Math.round(crop.w), Math.round(crop.h),
+        0, 0, Math.round(crop.w), Math.round(crop.h)
+      );
+
+      const blob = await new Promise(r => outCanvas.toBlob(r, "image/png"));
+      workingBitmap = await createImageBitmap(blob);
+
+      crop = {x:0, y:0, w:workingBitmap.width, h:workingBitmap.height};
+      syncCropInputs();
+
+      meta.textContent = `文件：${currentFile.name}（${human(currentFile.size)}）｜原图：${originalBitmap.width}×${originalBitmap.height}｜当前：${workingBitmap.width}×${workingBitmap.height}`;
+      fitToView();
+      setProgress("已应用裁切 ✅ 现在可以继续裁切或直接分段裁切。");
+    });
+
+    btnReset.addEventListener("click", ()=>{
+      if (!originalBitmap) return;
+      workingBitmap = originalBitmap;
+      crop = {x:0, y:0, w:workingBitmap.width, h:workingBitmap.height};
+      syncCropInputs();
+      clearResults();
+      meta.textContent = `文件：${currentFile.name}（${human(currentFile.size)}）｜原图：${originalBitmap.width}×${originalBitmap.height}｜当前：${workingBitmap.width}×${workingBitmap.height}`;
+      fitToView();
+      setProgress("已重置回原图 ✅");
+    });
+
+    btnAutoTrim.addEventListener("click", async ()=>{
+      if (!workingBitmap) return;
+      setProgress("正在自动去白边（分析边缘）…");
+
+      const tol = clamp(Number(tolInput.value || 18), 0, 80);
+      const iw = workingBitmap.width, ih = workingBitmap.height;
+
+      const maxSide = 1000;
+      const s = Math.min(1, maxSide / Math.max(iw, ih));
+      const sw = Math.max(1, Math.round(iw * s));
+      const sh = Math.max(1, Math.round(ih * s));
+
+      const c = document.createElement("canvas");
+      c.width = sw; c.height = sh;
+      const cctx = c.getContext("2d");
+      cctx.drawImage(workingBitmap, 0, 0, sw, sh);
+
+      const img = cctx.getImageData(0,0,sw,sh);
+      const data = img.data;
+
+      function getPixel(x,y){
+        const i = (y*sw + x)*4;
+        return [data[i], data[i+1], data[i+2], data[i+3]];
+      }
+      function avg(pxs){
+        const n = pxs.length;
+        let r=0,g=0,b=0,a=0;
+        for (const p of pxs){ r+=p[0]; g+=p[1]; b+=p[2]; a+=p[3]; }
+        return [r/n,g/n,b/n,a/n];
+      }
+      const bg = avg([getPixel(0,0), getPixel(sw-1,0), getPixel(0,sh-1), getPixel(sw-1,sh-1)]);
+
+      function dist(p){
+        const dr = p[0]-bg[0], dg=p[1]-bg[1], db=p[2]-bg[2];
+        const da = (p[3]-bg[3]) * 0.5;
+        return Math.sqrt(dr*dr + dg*dg + db*db + da*da);
+      }
+      const thr = tol * 3;
+
+      let top=0, bottom=sh-1, left=0, right=sw-1;
+
+      function rowHasContent(y){
+        for (let x=0; x<sw; x++){
+          const i = (y*sw + x)*4;
+          const p = [data[i],data[i+1],data[i+2],data[i+3]];
+          if (dist(p) > thr) return true;
+        }
+        return false;
+      }
+      function colHasContent(x){
+        for (let y=0; y<sh; y++){
+          const i = (y*sw + x)*4;
+          const p = [data[i],data[i+1],data[i+2],data[i+3]];
+          if (dist(p) > thr) return true;
+        }
+        return false;
+      }
+
+      while (top < sh-1 && !rowHasContent(top)) top++;
+      while (bottom > 0 && !rowHasContent(bottom)) bottom--;
+      while (left < sw-1 && !colHasContent(left)) left++;
+      while (right > 0 && !colHasContent(right)) right--;
+
+      if (right - left < 10 || bottom - top < 10){
+        crop = {x:0,y:0,w:iw,h:ih};
+        syncCropInputs();
+        draw();
+        setProgress("未检测到明显内容边界（可能背景不统一）。已保留全图。你也可以手动拖拽裁切框。");
+        return;
+      }
+
+      crop = {x: left / s, y: top / s, w: (right-left+1)/s, h: (bottom-top+1)/s};
+      normalizeCrop();
+      syncCropInputs();
+      draw();
+      setProgress("已根据边缘自动生成裁切框 ✅ 你可以再微调后点“应用裁切”。");
+    });
+
+    function computeSlicesByHeight(totalH, sliceH, ov){
+      sliceH = Math.max(1, Math.floor(sliceH));
+      ov = clamp(Math.floor(ov), 0, sliceH-1);
+      if (totalH <= sliceH) return [[0, totalH]];
+      const step = sliceH - ov;
+      const out = [];
+      let y = 0;
+      while (y < totalH){
+        let y2 = Math.min(y + sliceH, totalH);
+        if (y2 === totalH && (y2 - y) < sliceH && totalH - sliceH >= 0){
+          y = Math.max(0, totalH - sliceH);
+          y2 = totalH;
+        }
+        out.push([y, y2]);
+        if (y2 >= totalH) break;
+        y += step;
+      }
+      return out.filter((v,i,a)=> i===0 || v[0]!==a[i-1][0] || v[1]!==a[i-1][1]);
+    }
+    function computeSlicesByParts(totalH, n, ov){
+      n = Math.max(1, Math.floor(n));
+      if (n === 1) return [[0, totalH]];
+      const sliceH = Math.ceil(totalH / n);
+      return computeSlicesByHeight(totalH, sliceH, ov);
+    }
+    function pad(num, len){
+      const s = String(num);
+      return s.length >= len ? s : "0".repeat(len - s.length) + s;
+    }
+    function baseName(filename){ return filename.replace(/\.[^/.]+$/, ""); }
+
+    btnSlice.addEventListener("click", async ()=>{
+      if (!workingBitmap || !currentFile) return;
+      clearResults();
+      btnZip.disabled = true;
+      btnSlice.disabled = true;
+
+      const w = workingBitmap.width;
+      const h = workingBitmap.height;
+      const ov = Number(overlap.value || 0);
+
+      let slices = [];
+      if (mode.value === "parts"){
+        slices = computeSlicesByParts(h, Number(parts.value || 1), ov);
+      }else{
+        slices = computeSlicesByHeight(h, Number(sliceHeight.value || 2000), ov);
+      }
+
+      const mime = format.value;
+      const useJpg = (mime === "image/jpeg");
+      const q = clamp(Number(jpgQuality.value || 95) / 100, 0.01, 1);
+
+      const outCanvas = document.createElement("canvas");
+      const octx = outCanvas.getContext("2d", {alpha: true});
+
+      const bn = baseName(currentFile.name);
+      const ext = useJpg ? "jpg" : "png";
+      const digits = Math.max(3, String(slices.length).length);
+
+      setProgress(`开始分段裁切：共 ${slices.length} 段…`);
+
+      for (let i = 0; i < slices.length; i++){
+        const [y1, y2] = slices[i];
+        const sh = y2 - y1;
+
+        outCanvas.width = w;
+        outCanvas.height = sh;
+        octx.setTransform(1,0,0,1,0,0);
+        octx.clearRect(0,0,w,sh);
+        octx.drawImage(workingBitmap, 0, y1, w, sh, 0, 0, w, sh);
+
+        const blob = await new Promise(r => outCanvas.toBlob(r, mime, useJpg ? q : undefined));
+        const url = URL.createObjectURL(blob);
+        const name = `${bn}_slice_${pad(i+1, digits)}.${ext}`;
+
+        outputs.push({name, blob, url, w, h: sh, idx: i+1});
+        addItem(outputs[outputs.length - 1]);
+
+        setProgress(`已完成 ${i+1}/${slices.length} 段…`);
+        await new Promise(r => setTimeout(r, 0));
+      }
+
+      setProgress(`完成 ✅ 生成 ${outputs.length} 张图片。`);
+      btnSlice.disabled = false;
+      btnZip.disabled = outputs.length === 0;
+    });
+
+    function addItem(o){
+      const div = document.createElement("div");
+      div.className = "item";
+
+      const img = document.createElement("img");
+      img.className = "thumb";
+      img.src = o.url;
+      img.alt = o.name;
+
+      const bar = document.createElement("div");
+      bar.className = "bar";
+
+      const info = document.createElement("div");
+      info.style.fontSize = "12px";
+      info.style.color = "#a7adbd";
+      info.textContent = `${o.name} ｜ ${o.w}×${o.h} ｜ ${human(o.blob.size)}`;
+
+      const a = document.createElement("a");
+      a.href = o.url;
+      a.download = o.name;
+      a.textContent = "下载这一段";
+
+      bar.appendChild(info);
+      bar.appendChild(a);
+      div.appendChild(img);
+      div.appendChild(bar);
+      grid.appendChild(div);
+    }
+
+    btnZip.addEventListener("click", async ()=>{
+      if (!outputs.length) return;
+      btnZip.disabled = true;
+      setProgress("正在打包 ZIP…");
+
+      try{
+        const zip = new JSZip();
+        for (let i = 0; i < outputs.length; i++){
+          const o = outputs[i];
+          zip.file(o.name, await o.blob.arrayBuffer());
+          setProgress(`正在打包 ZIP… ${i+1}/${outputs.length}`);
+          await new Promise(r => setTimeout(r, 0));
+        }
+
+        const zipBlob = await zip.generateAsync({type:"blob"});
+        const url = URL.createObjectURL(zipBlob);
+
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${baseName(currentFile.name)}_slices.zip`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        setTimeout(()=>URL.revokeObjectURL(url), 30_000);
+        setProgress("ZIP 已开始下载 ✅");
+      }catch(e){
+        console.error(e);
+        setProgress("打包失败：可能是图片太大导致浏览器内存不足。建议减少份数/分段高度，或先应用裁切缩小宽度再打包。");
+      }finally{
+        btnZip.disabled = outputs.length === 0;
+      }
+    });
+
+    updateModeUI();
+    updateFormatUI();
+    resizeCanvasToContainer();
+    enableUI(false);
+
+    let hinted = false;
+    canvas.addEventListener("pointerdown", ()=>{
+      if (!hinted){
+        hinted = true;
+        setTimeout(()=>{ hint.style.display = "none"; }, 1800);
+      }
+    });
+  </script>
+</body>
+</html>
