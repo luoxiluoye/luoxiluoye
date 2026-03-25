@@ -1,0 +1,652 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>英文文献阅读器（PDF / DOCX 翻译）</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #111832;
+      --panel-2: #171f3f;
+      --text: #e8edff;
+      --muted: #9fb0e5;
+      --accent: #6ea8ff;
+      --ok: #2ecc71;
+      --warn: #f39c12;
+      --danger: #ff6b6b;
+      --border: #2b3565;
+      --shadow: rgba(0, 0, 0, 0.25);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(180deg, #080d1d 0%, #11193b 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .app {
+      max-width: 1320px;
+      margin: 20px auto;
+      padding: 16px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 8px 24px var(--shadow);
+    }
+
+    .toolbar {
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      align-items: end;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    label {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    input, select, textarea, button {
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      color: var(--text);
+      font-size: 14px;
+      padding: 10px;
+      outline: none;
+    }
+
+    textarea { min-height: 72px; resize: vertical; }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(110, 168, 255, 0.25);
+    }
+
+    button {
+      cursor: pointer;
+      font-weight: 600;
+      transition: all .2s;
+    }
+
+    button.primary { background: #2d58ce; border-color: #3f67d6; }
+    button.primary:hover { transform: translateY(-1px); }
+    button.success { background: #1f874b; border-color: #2aa85f; }
+
+    .status {
+      padding: 10px 14px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .reader {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      padding: 14px;
+    }
+
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      min-height: 460px;
+      display: flex;
+      flex-direction: column;
+      background: #0e1530;
+    }
+
+    .panel h3 {
+      margin: 0;
+      padding: 12px;
+      font-size: 14px;
+      border-bottom: 1px solid var(--border);
+      color: #bfd0ff;
+      letter-spacing: 0.3px;
+    }
+
+    .content {
+      flex: 1;
+      overflow: auto;
+      padding: 14px;
+      line-height: 1.75;
+      white-space: pre-wrap;
+      word-break: break-word;
+      position: relative;
+    }
+
+    .chunk {
+      padding: 8px;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      border: 1px dashed transparent;
+    }
+
+    .chunk:hover { border-color: #394b8f; background: rgba(255, 255, 255, 0.02); }
+
+    .align {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .word-popup {
+      position: absolute;
+      max-width: 360px;
+      z-index: 200;
+      background: #1a2550;
+      border: 1px solid #3b4f9a;
+      box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4);
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 13px;
+      display: none;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .tokens {
+      color: #9fd4ff;
+      font-size: 12px;
+    }
+
+    @media (max-width: 980px) {
+      .reader { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="card">
+      <div class="toolbar">
+        <div class="field">
+          <label>导入文献（支持 PDF / DOCX / TXT）</label>
+          <input type="file" id="fileInput" accept=".pdf,.docx,.txt" />
+          <div class="hint">本地解析，不会自动上传原文件。</div>
+        </div>
+
+        <div class="field">
+          <label>翻译 API Base URL（OpenAI 兼容）</label>
+          <input id="apiBase" value="https://api.openai.com/v1" />
+        </div>
+
+        <div class="field">
+          <label>API Key</label>
+          <input id="apiKey" type="password" placeholder="sk-..." />
+        </div>
+
+        <div class="field">
+          <label>Model</label>
+          <input id="model" value="gpt-4o-mini" />
+        </div>
+
+        <div class="field">
+          <label>目标语言</label>
+          <select id="targetLang">
+            <option value="简体中文" selected>简体中文</option>
+            <option value="繁體中文">繁體中文</option>
+            <option value="日语">日语</option>
+            <option value="韩语">韩语</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>每段最大字符（降低报错风险）</label>
+          <input id="chunkSize" type="number" min="200" max="4000" value="1200" />
+        </div>
+
+        <div class="field" style="grid-column: 1 / -1;">
+          <label>术语表（每行：英文=中文）</label>
+          <textarea id="glossary" placeholder="large language model=大语言模型&#10;reinforcement learning=强化学习"></textarea>
+        </div>
+
+        <button id="parseBtn" class="primary">1) 解析文档</button>
+        <button id="translateBtn" class="success">2) 对照翻译全文</button>
+        <button id="exportPdfBtn">3) 导出对照 PDF</button>
+        <div class="field">
+          <label>PDF 导出布局</label>
+          <select id="pdfLayout">
+            <option value="stacked" selected>上下对照（推荐打印）</option>
+            <option value="columns">左右双栏</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>导出选项</label>
+          <select id="pdfExtra">
+            <option value="full" selected>封面 + 目录 + 时间戳</option>
+            <option value="simple">仅正文</option>
+          </select>
+        </div>
+      </div>
+      <div class="status">
+        <span id="statusText">等待导入文件...</span>
+        <span class="tokens" id="progressText"></span>
+      </div>
+    </section>
+
+    <section class="card reader">
+      <div class="panel">
+        <h3>原文（支持划词翻译）</h3>
+        <div class="content" id="sourceContent"></div>
+      </div>
+      <div class="panel">
+        <h3>译文（段落对照）</h3>
+        <div class="content" id="targetContent"></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="word-popup" id="wordPopup"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.5.136/build/pdf.min.mjs" type="module"></script>
+  <script type="module">
+    import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.5.136/build/pdf.min.mjs';
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.5.136/build/pdf.worker.min.mjs';
+
+    const state = {
+      rawText: '',
+      chunks: [],
+      translations: [],
+      isTranslating: false,
+    };
+
+    const el = {
+      fileInput: document.getElementById('fileInput'),
+      apiBase: document.getElementById('apiBase'),
+      apiKey: document.getElementById('apiKey'),
+      model: document.getElementById('model'),
+      targetLang: document.getElementById('targetLang'),
+      chunkSize: document.getElementById('chunkSize'),
+      parseBtn: document.getElementById('parseBtn'),
+      translateBtn: document.getElementById('translateBtn'),
+      exportPdfBtn: document.getElementById('exportPdfBtn'),
+      pdfLayout: document.getElementById('pdfLayout'),
+      pdfExtra: document.getElementById('pdfExtra'),
+      statusText: document.getElementById('statusText'),
+      progressText: document.getElementById('progressText'),
+      sourceContent: document.getElementById('sourceContent'),
+      targetContent: document.getElementById('targetContent'),
+      wordPopup: document.getElementById('wordPopup'),
+      glossary: document.getElementById('glossary'),
+    };
+
+    const setStatus = (msg) => { el.statusText.textContent = msg; };
+
+    function parseGlossaryRules() {
+      const raw = el.glossary.value || '';
+      return raw
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean)
+        .map(line => line.split('=').map(x => x.trim()))
+        .filter(parts => parts.length >= 2 && parts[0] && parts[1])
+        .map(([src, ...rest]) => ({ src, dst: rest.join('=').trim() }));
+    }
+
+    function splitIntoChunks(text, maxChars = 1200) {
+      const paragraphs = text
+        .split(/\n{2,}/)
+        .map(t => t.trim())
+        .filter(Boolean);
+
+      const chunks = [];
+      let buffer = '';
+
+      for (const p of paragraphs) {
+        if ((buffer + '\n\n' + p).length <= maxChars) {
+          buffer = buffer ? buffer + '\n\n' + p : p;
+        } else {
+          if (buffer) chunks.push(buffer);
+          if (p.length <= maxChars) {
+            buffer = p;
+          } else {
+            const sentences = p.split(/(?<=[.!?。！？])\s+/);
+            let sentenceBuffer = '';
+            for (const s of sentences) {
+              if ((sentenceBuffer + ' ' + s).length <= maxChars) {
+                sentenceBuffer = sentenceBuffer ? sentenceBuffer + ' ' + s : s;
+              } else {
+                if (sentenceBuffer) chunks.push(sentenceBuffer);
+                sentenceBuffer = s;
+              }
+            }
+            if (sentenceBuffer) buffer = sentenceBuffer;
+          }
+        }
+      }
+      if (buffer) chunks.push(buffer);
+      return chunks;
+    }
+
+    function getChunkTitle(chunk, index) {
+      const lines = (chunk || '').split('\n').map(x => x.trim()).filter(Boolean);
+      const first = lines[0] || '';
+      const looksLikeHeading = first.length > 0 && first.length <= 80 && !/[.!?。！？]$/.test(first);
+      if (looksLikeHeading) return first;
+      const preview = first.slice(0, 42);
+      return preview ? `${preview}${first.length > 42 ? '…' : ''}` : `Segment ${index + 1}`;
+    }
+
+    async function extractPdfText(file) {
+      const arr = new Uint8Array(await file.arrayBuffer());
+      const loadingTask = pdfjsLib.getDocument({ data: arr });
+      const pdf = await loadingTask.promise;
+      const pages = [];
+
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const tc = await page.getTextContent();
+        const text = tc.items.map(item => item.str).join(' ');
+        pages.push(`[Page ${i}]\n${text}`);
+      }
+      return pages.join('\n\n');
+    }
+
+    async function extractDocxText(file) {
+      const buffer = await file.arrayBuffer();
+      const result = await window.mammoth.extractRawText({ arrayBuffer: buffer });
+      return result.value;
+    }
+
+    async function extractTxtText(file) {
+      return await file.text();
+    }
+
+    function renderBilingual() {
+      el.sourceContent.innerHTML = '';
+      el.targetContent.innerHTML = '';
+      state.chunks.forEach((chunk, idx) => {
+        const left = document.createElement('div');
+        left.className = 'chunk';
+        left.dataset.index = String(idx);
+        left.textContent = chunk;
+
+        const right = document.createElement('div');
+        right.className = 'chunk';
+        right.dataset.index = String(idx);
+        right.textContent = state.translations[idx] || '（待翻译）';
+
+        el.sourceContent.appendChild(left);
+        el.targetContent.appendChild(right);
+      });
+    }
+
+    async function translateChunk(text, { apiBase, apiKey, model, targetLang }) {
+      const glossaryRules = parseGlossaryRules();
+      const prompt = [
+        `You are a professional academic translator.`,
+        `Translate the following English text into ${targetLang}.`,
+        `Keep terminology consistent and preserve paragraph breaks.`,
+        glossaryRules.length ? `Terminology glossary (must follow): ${glossaryRules.map(r => `${r.src}=>${r.dst}`).join('; ')}` : '',
+        `Only output translated text, no explanation.`
+      ].join(' ');
+
+      const res = await fetch(`${apiBase.replace(/\/$/, '')}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.1,
+          messages: [
+            { role: 'system', content: prompt },
+            { role: 'user', content: text }
+          ]
+        })
+      });
+
+      if (!res.ok) {
+        const detail = await res.text();
+        throw new Error(`翻译接口报错(${res.status}): ${detail.slice(0, 200)}`);
+      }
+
+      const data = await res.json();
+      return data?.choices?.[0]?.message?.content?.trim() || '';
+    }
+
+    async function quickWordTranslate(text) {
+      const apiBase = el.apiBase.value.trim();
+      const apiKey = el.apiKey.value.trim();
+      const model = el.model.value.trim();
+      const targetLang = el.targetLang.value;
+      const glossaryRules = parseGlossaryRules();
+
+      if (!apiKey) throw new Error('请先填写 API Key');
+
+      const prompt = `Translate this short phrase into ${targetLang}. Keep it concise and provide one best translation only. ${glossaryRules.length ? `Terminology glossary: ${glossaryRules.map(r => `${r.src}=>${r.dst}`).join('; ')}` : ''}`;
+      const res = await fetch(`${apiBase.replace(/\/$/, '')}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0,
+          messages: [
+            { role: 'system', content: prompt },
+            { role: 'user', content: text }
+          ]
+        })
+      });
+      if (!res.ok) throw new Error(`划词翻译失败(${res.status})`);
+      const data = await res.json();
+      return data?.choices?.[0]?.message?.content?.trim() || '（无结果）';
+    }
+
+    el.parseBtn.addEventListener('click', async () => {
+      const file = el.fileInput.files?.[0];
+      if (!file) return setStatus('请先选择文件');
+
+      setStatus(`正在解析：${file.name}`);
+      el.progressText.textContent = '';
+
+      try {
+        const ext = file.name.split('.').pop().toLowerCase();
+        let text = '';
+        if (ext === 'pdf') text = await extractPdfText(file);
+        else if (ext === 'docx') text = await extractDocxText(file);
+        else if (ext === 'txt') text = await extractTxtText(file);
+        else throw new Error('暂不支持该格式，请使用 PDF / DOCX / TXT');
+
+        state.rawText = text.replace(/\u0000/g, '').trim();
+        const maxChars = Number(el.chunkSize.value) || 1200;
+        state.chunks = splitIntoChunks(state.rawText, maxChars);
+        state.translations = new Array(state.chunks.length).fill('');
+        renderBilingual();
+
+        setStatus(`解析完成，共 ${state.chunks.length} 段。可开始翻译。`);
+      } catch (err) {
+        setStatus(`解析失败：${err.message}`);
+      }
+    });
+
+    el.translateBtn.addEventListener('click', async () => {
+      if (state.isTranslating) return;
+      if (!state.chunks.length) return setStatus('请先解析文档');
+
+      const apiBase = el.apiBase.value.trim();
+      const apiKey = el.apiKey.value.trim();
+      const model = el.model.value.trim();
+      const targetLang = el.targetLang.value;
+
+      if (!apiBase || !apiKey || !model) {
+        return setStatus('请填写 API Base URL / API Key / Model');
+      }
+
+      state.isTranslating = true;
+      try {
+        for (let i = 0; i < state.chunks.length; i++) {
+          setStatus(`翻译中：第 ${i + 1}/${state.chunks.length} 段`);
+          el.progressText.textContent = `${Math.round(((i + 1) / state.chunks.length) * 100)}%`;
+          const translated = await translateChunk(state.chunks[i], { apiBase, apiKey, model, targetLang });
+          state.translations[i] = translated;
+          renderBilingual();
+        }
+        setStatus('全文翻译完成 ✅');
+      } catch (err) {
+        setStatus(`翻译中断：${err.message}`);
+      } finally {
+        state.isTranslating = false;
+      }
+    });
+
+    el.exportPdfBtn.addEventListener('click', () => {
+      if (!state.chunks.length) return setStatus('请先解析文档');
+      if (!state.translations.some(Boolean)) return setStatus('请先完成翻译再导出 PDF');
+
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 36;
+      const colGap = 18;
+      const colWidth = (pageWidth - margin * 2 - colGap) / 2;
+      const layout = el.pdfLayout.value;
+      const withExtra = el.pdfExtra.value === 'full';
+      let y = margin;
+
+      if (withExtra) {
+        const now = new Date();
+        const stamp = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')} ${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')} UTC`;
+        doc.setFontSize(20);
+        doc.text('Bilingual Literature Translation', margin, margin + 24);
+        doc.setFontSize(11);
+        doc.text(`Segments: ${state.chunks.length}`, margin, margin + 56);
+        doc.text(`Exported at: ${stamp}`, margin, margin + 74);
+        doc.text(`Layout: ${layout === 'stacked' ? 'Stacked (source + translation)' : 'Two columns'}`, margin, margin + 92);
+        doc.addPage();
+      }
+
+      const toc = [];
+      doc.setFontSize(10);
+      y = margin;
+
+      for (let i = 0; i < state.chunks.length; i++) {
+        const src = state.chunks[i] || '';
+        const dst = state.translations[i] || '';
+        if (!dst) continue;
+        const pageNo = doc.getCurrentPageInfo().pageNumber;
+        const title = getChunkTitle(src, i);
+        toc.push({ index: i + 1, page: pageNo, title });
+
+        if (layout === 'columns') {
+          const leftLines = doc.splitTextToSize(`[${i + 1}] ${title}\n${src}`, colWidth);
+          const rightLines = doc.splitTextToSize(`[${i + 1}] ${title}\n${dst}`, colWidth);
+          const blockHeight = Math.max(leftLines.length, rightLines.length) * 13 + 10;
+
+          if (y + blockHeight > pageHeight - margin) {
+            doc.addPage();
+            y = margin;
+          }
+
+          doc.text(leftLines, margin, y);
+          doc.text(rightLines, margin + colWidth + colGap, y);
+          y += blockHeight;
+        } else {
+          const srcLines = doc.splitTextToSize(`[${i + 1}] ${title}\nSource: ${src}`, pageWidth - margin * 2);
+          const dstLines = doc.splitTextToSize(`[${i + 1}] ${title}\nTranslation: ${dst}`, pageWidth - margin * 2);
+          const blockHeight = (srcLines.length + dstLines.length) * 13 + 18;
+
+          if (y + blockHeight > pageHeight - margin) {
+            doc.addPage();
+            y = margin;
+          }
+
+          doc.text(srcLines, margin, y);
+          y += srcLines.length * 13 + 6;
+          doc.text(dstLines, margin, y);
+          y += dstLines.length * 13 + 12;
+        }
+      }
+
+      if (withExtra && toc.length) {
+        doc.insertPage(2);
+        doc.setPage(2);
+        let ty = margin;
+        doc.setFontSize(16);
+        doc.text('Table of Contents', margin, ty);
+        ty += 20;
+        doc.setFontSize(10);
+        for (const item of toc) {
+          const tocLine = `${item.title} (S${item.index}) ....... Page ${item.page + 1}`;
+          const tocWrapped = doc.splitTextToSize(tocLine, pageWidth - margin * 2);
+          const needed = tocWrapped.length * 12;
+          if (ty + needed > pageHeight - margin) {
+            doc.addPage();
+            ty = margin;
+          }
+          doc.text(tocWrapped, margin, ty);
+          doc.link(margin, ty - 9, pageWidth - margin * 2, needed, { pageNumber: item.page + 1 });
+          ty += needed;
+        }
+      }
+
+      doc.save('bilingual-translation.pdf');
+      setStatus(`已导出 PDF：bilingual-translation.pdf（${layout === 'stacked' ? '上下对照' : '双栏'}）`);
+    });
+
+    function hideWordPopup() {
+      el.wordPopup.style.display = 'none';
+    }
+
+    document.addEventListener('click', (evt) => {
+      if (!el.wordPopup.contains(evt.target)) hideWordPopup();
+    });
+
+    el.sourceContent.addEventListener('mouseup', async () => {
+      const selection = window.getSelection();
+      const text = selection?.toString()?.trim();
+      if (!text || text.length > 120) return;
+
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      const x = rect.left + window.scrollX;
+      const y = rect.bottom + window.scrollY + 8;
+
+      el.wordPopup.style.left = `${x}px`;
+      el.wordPopup.style.top = `${y}px`;
+      el.wordPopup.textContent = `翻译中：${text}`;
+      el.wordPopup.style.display = 'block';
+
+      try {
+        const translated = await quickWordTranslate(text);
+        el.wordPopup.innerHTML = `<div><b>原文：</b>${text}</div><div style="margin-top: 6px;"><b>译文：</b>${translated}</div>`;
+      } catch (err) {
+        el.wordPopup.textContent = `划词翻译失败：${err.message}`;
+      }
+    });
+  </script>
+</body>
+</html>
